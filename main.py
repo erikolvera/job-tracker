@@ -1,12 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from pydantic import BaseModel
 from typing import Optional
-
+from sqlalchemy.orm import Session
+from database import ApplicationModel, get_db
 
 app = FastAPI()
-
-applications = []
-counter= 1
 
 class Application(BaseModel):
     company: str
@@ -16,44 +14,42 @@ class Application(BaseModel):
 
 @app.get("/")
 def root():
-    return {"messagae":"Job Tracker API is running"}
+    return {"message": "Job Tracker API is running"}
 
-# create an application
 @app.post("/applications")
-def add_application(app_data: Application):
-    global counter
-    new_app = {"id":counter, **app_data.dict()}
-    applications.append(new_app)
-    counter+=1
+def add_application(app_data: Application, db: Session = Depends(get_db)):
+    new_app = ApplicationModel(**app_data.dict())
+    db.add(new_app)
+    db.commit()
+    db.refresh(new_app)
     return new_app
 
-#get all applications
-@app.get("/applications/")
-def get_applications():
-    return applications
+@app.get("/applications")
+def get_applications(db: Session = Depends(get_db)):
+    return db.query(ApplicationModel).all()
 
-#get one application
 @app.get("/applications/{id}")
-def get_application(id:int):
-    for application in applications:
-        if application["id"] == id:
-            return application
-    return {"error":"Application not found"}
+def get_application(id: int, db: Session = Depends(get_db)):
+    application = db.query(ApplicationModel).filter(ApplicationModel.id == id).first()
+    if not application:
+        return {"error": "Application not found"}
+    return application
 
-#update an application
 @app.put("/applications/{id}")
-def update_status(id:int, status:str):
-    print(f"Received status: '{status}'")
-    for application in applications:
-        if application["id"] == id:
-            application["status"] == status
-        return application
-    return {"error":"Application not found"}
+def update_status(id: int, status: str, db: Session = Depends(get_db)):
+    application = db.query(ApplicationModel).filter(ApplicationModel.id == id).first()
+    if not application:
+        return {"error": "Application not found"}
+    application.status = status
+    db.commit()
+    db.refresh(application)
+    return application
 
 @app.delete("/applications/{id}")
-def delete_application(id:int):
-    for index,application in enumerare(applications):
-        if application["id"] == id:
-            applications.pop(index)
-            return {"message": f"Application {id} deleted"}
-    return {"error":"application not found"}
+def delete_application(id: int, db: Session = Depends(get_db)):
+    application = db.query(ApplicationModel).filter(ApplicationModel.id == id).first()
+    if not application:
+        return {"error": "Application not found"}
+    db.delete(application)
+    db.commit()
+    return {"message": f"Application {id} deleted"}
